@@ -211,6 +211,7 @@
 
         async function sendToWebhook(barcodeValue, location) {
             const webhookUrl = localStorage.getItem('webhookUrl') || 'https://hook.us1.make.com/vrkgwj79n3ak7kwrp07m1x0jnjbpsjtx';
+            const apiKey = localStorage.getItem('makeApiKey') || '';
             
             // Check geofence if location is available
             let geofenceResult = null;
@@ -233,11 +234,18 @@
             try {
                 showStatus('Sending data to server...', 'info');
                 
+                const headers = {
+                    'Content-Type': 'application/json',
+                };
+                
+                // Add API key to headers if available
+                if (apiKey) {
+                    headers['x-make-apikey'] = apiKey;
+                }
+                
                 const response = await fetch(webhookUrl, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: headers,
                     body: JSON.stringify(payload)
                 });
 
