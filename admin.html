@@ -15,25 +15,8 @@
             color: #333;
         }
         
-        .login-container {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        
-        .login-box {
-            background: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 400px;
-        }
         
         .admin-container {
-            display: none;
             min-height: 100vh;
             background: #f5f5f5;
         }
@@ -143,15 +126,6 @@
             text-align: center;
         }
         
-        .logout-btn {
-            background: transparent;
-            color: white;
-            border: 1px solid white;
-            padding: 8px 16px;
-            font-size: 14px;
-            float: right;
-        }
-        
         @media (max-width: 768px) {
             .controls {
                 grid-template-columns: 1fr;
@@ -160,23 +134,10 @@
     </style>
 </head>
 <body>
-    <!-- Login Screen -->
-    <div class="login-container" id="loginScreen">
-        <div class="login-box">
-            <h2 style="margin-bottom: 30px; text-align: center; color: #002855;">Guggenheim Admin Portal</h2>
-            <form id="loginForm">
-                <input type="password" id="password" placeholder="Enter admin password" required>
-                <div class="error" id="loginError"></div>
-                <button type="submit" style="margin-top: 20px;">Login</button>
-            </form>
-        </div>
-    </div>
-
     <!-- Admin Panel -->
     <div class="admin-container" id="adminPanel">
         <div class="header">
-            <button class="logout-btn" onclick="logout()">Logout</button>
-            <h1>Geofence Configuration</h1>
+            <h1>Guggenheim - Geofence Configuration</h1>
         </div>
         
         <div class="content">
@@ -188,8 +149,9 @@
                 <div class="controls">
                     <input type="text" id="locationName" placeholder="Location name (e.g., NYC Office)">
                     <input type="number" id="radius" placeholder="Radius in meters" value="500" min="50" max="5000">
+                    <input type="password" id="adminPassword" placeholder="Admin password">
                     <button onclick="useCurrentLocation()">Use Current Location</button>
-                    <button onclick="saveGeofence()">Save Geofence</button>
+                    <button onclick="saveGeofence()">Save Location</button>
                 </div>
             </div>
             
@@ -208,46 +170,18 @@
     </div>
 
     <script>
-        // Simple password protection (for demo purposes)
-        const ADMIN_PASSWORD = 'guggenheim2024';
-        
         // Initialize map variables
         let map;
         let currentMarker;
         let currentCircle;
         let geofences = [];
         
-        // Check if already logged in
-        if (localStorage.getItem('adminAuth') === 'true') {
-            showAdminPanel();
-        }
-        
-        // Login handler
-        document.getElementById('loginForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            const password = document.getElementById('password').value;
-            
-            if (password === ADMIN_PASSWORD) {
-                localStorage.setItem('adminAuth', 'true');
-                showAdminPanel();
-            } else {
-                document.getElementById('loginError').textContent = 'Invalid password';
-                document.getElementById('password').value = '';
-            }
-        });
-        
-        function showAdminPanel() {
-            document.getElementById('loginScreen').style.display = 'none';
-            document.getElementById('adminPanel').style.display = 'block';
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
             initializeMap();
             loadGeofences();
             loadWebhook();
-        }
-        
-        function logout() {
-            localStorage.removeItem('adminAuth');
-            location.reload();
-        }
+        });
         
         function initializeMap() {
             // Initialize map centered on Guggenheim NYC
@@ -362,7 +296,7 @@
             );
         }
 
-        function saveGeofence() {
+        async function saveGeofence() {
             if (!currentMarker) {
                 alert('Please click on the map or use current location first');
                 return;
@@ -370,6 +304,7 @@
             
             const name = document.getElementById('locationName').value;
             const radius = document.getElementById('radius').value;
+            const password = document.getElementById('adminPassword').value;
             const latlng = currentMarker.getLatLng();
             
             if (!name) {
@@ -377,30 +312,74 @@
                 return;
             }
             
-            const geofence = {
-                id: Date.now(),
-                name: name,
-                lat: latlng.lat,
-                lng: latlng.lng,
-                radius: parseInt(radius)
+            if (!password) {
+                alert('Please enter admin password');
+                return;
+            }
+            
+            const payload = {
+                action: 'save_geofence',
+                password: password,
+                geofence: {
+                    name: name,
+                    lat: latlng.lat,
+                    lng: latlng.lng,
+                    radius: parseInt(radius)
+                },
+                timestamp: new Date().toISOString()
             };
             
-            geofences.push(geofence);
-            localStorage.setItem('geofences', JSON.stringify(geofences));
-            
-            // Clear inputs
-            document.getElementById('locationName').value = '';
-            if (currentMarker) map.removeLayer(currentMarker);
-            if (currentCircle) map.removeLayer(currentCircle);
-            currentMarker = null;
-            currentCircle = null;
-            
-            // Refresh displays
-            loadGeofences();
-            displayGeofencesOnMap();
-            
-            // Show success message
-            showStatus('Geofence saved successfully!');
+            try {
+                showStatus('Validating and saving...', 'webhookStatus');
+                
+                const response = await fetch('https://hook.us1.make.com/3bnlollq8d0a96ut8sgkod5mb3inm0cs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    // Save to local storage on success
+                    const geofence = {
+                        id: Date.now(),
+                        name: name,
+                        lat: latlng.lat,
+                        lng: latlng.lng,
+                        radius: parseInt(radius)
+                    };
+                    
+                    geofences.push(geofence);
+                    localStorage.setItem('geofences', JSON.stringify(geofences));
+                    
+                    // Clear inputs
+                    document.getElementById('locationName').value = '';
+                    document.getElementById('adminPassword').value = '';
+                    if (currentMarker) map.removeLayer(currentMarker);
+                    if (currentCircle) map.removeLayer(currentCircle);
+                    currentMarker = null;
+                    currentCircle = null;
+                    
+                    // Refresh displays
+                    loadGeofences();
+                    displayGeofencesOnMap();
+                    
+                    showStatus('Location saved successfully!', 'webhookStatus');
+                } else {
+                    // Handle error (likely wrong password)
+                    const errorMessage = result.error || 'Authentication failed';
+                    alert(errorMessage);
+                    showStatus('Save failed: ' + errorMessage, 'webhookStatus');
+                }
+                
+            } catch (error) {
+                console.error('Save error:', error);
+                alert('Error connecting to server');
+                showStatus('Connection error', 'webhookStatus');
+            }
         }
         
         function loadGeofences() {
