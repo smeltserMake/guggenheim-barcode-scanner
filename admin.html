@@ -188,6 +188,7 @@
                 <div class="controls">
                     <input type="text" id="locationName" placeholder="Location name (e.g., NYC Office)">
                     <input type="number" id="radius" placeholder="Radius in meters" value="500" min="50" max="5000">
+                    <button onclick="useCurrentLocation()">Use Current Location</button>
                     <button onclick="saveGeofence()">Save Geofence</button>
                 </div>
             </div>
@@ -295,9 +296,75 @@
             displayGeofencesOnMap();
         }
         
+        function useCurrentLocation() {
+            if (!navigator.geolocation) {
+                alert('Geolocation is not supported by this browser');
+                return;
+            }
+            
+            showStatus('Getting your location...', 'webhookStatus');
+            
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    
+                    // Remove existing marker and circle
+                    if (currentMarker) map.removeLayer(currentMarker);
+                    if (currentCircle) map.removeLayer(currentCircle);
+                    
+                    // Add marker at current location
+                    currentMarker = L.marker([lat, lng]).addTo(map);
+                    
+                    // Add circle with current radius
+                    const radius = document.getElementById('radius').value || 500;
+                    currentCircle = L.circle([lat, lng], {
+                        color: '#002855',
+                        fillColor: '#002855',
+                        fillOpacity: 0.2,
+                        radius: parseInt(radius)
+                    }).addTo(map);
+                    
+                    // Center map on current location
+                    map.setView([lat, lng], 16);
+                    
+                    // Update location name
+                    const name = document.getElementById('locationName');
+                    if (!name.value) {
+                        name.value = `My Location ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                    }
+                    
+                    showStatus('Location set successfully!', 'webhookStatus');
+                },
+                function(error) {
+                    let message = 'Unable to get location: ';
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            message += 'Permission denied';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            message += 'Location unavailable';
+                            break;
+                        case error.TIMEOUT:
+                            message += 'Request timeout';
+                            break;
+                        default:
+                            message += 'Unknown error';
+                            break;
+                    }
+                    alert(message);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        }
+
         function saveGeofence() {
             if (!currentMarker) {
-                alert('Please click on the map to set a location');
+                alert('Please click on the map or use current location first');
                 return;
             }
             
