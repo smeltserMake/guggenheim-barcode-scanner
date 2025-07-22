@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guggenheim - Geofence Admin</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .login-box {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .admin-container {
+            display: none;
+            min-height: 100vh;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: #002855;
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 300;
+        }
+        
+        .content {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        #map {
+            height: 500px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        input, select, button {
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            width: 100%;
+        }
+        
+        button {
+            background: #002855;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #003d7a;
+        }
+        
+        .geofence-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .geofence-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .geofence-item:hover {
+            background: #f9f9f9;
+        }
+        
+        .delete-btn {
+            background: #dc3545;
+            padding: 6px 12px;
+            font-size: 14px;
+        }
+        
+        .delete-btn:hover {
+            background: #c82333;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            text-align: center;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .error {
+            color: #dc3545;
+            margin-top: 10px;
+            text-align: center;
+        }
+        
+        .logout-btn {
+            background: transparent;
+            color: white;
+            border: 1px solid white;
+            padding: 8px 16px;
+            font-size: 14px;
+            float: right;
+        }
+        
+        @media (max-width: 768px) {
+            .controls {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div class="login-container" id="loginScreen">
+        <div class="login-box">
+            <h2 style="margin-bottom: 30px; text-align: center; color: #002855;">Guggenheim Admin Portal</h2>
+            <form id="loginForm">
+                <input type="password" id="password" placeholder="Enter admin password" required>
+                <div class="error" id="loginError"></div>
+                <button type="submit" style="margin-top: 20px;">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Admin Panel -->
+    <div class="admin-container" id="adminPanel">
+        <div class="header">
+            <button class="logout-btn" onclick="logout()">Logout</button>
+            <h1>Geofence Configuration</h1>
+        </div>
+        
+        <div class="content">
+            <div class="card">
+                <h2>Map View</h2>
+                <p style="margin-bottom: 10px; color: #666;">Click on the map to set geofence center, then adjust radius</p>
+                <div id="map"></div>
+                
+                <div class="controls">
+                    <input type="text" id="locationName" placeholder="Location name (e.g., NYC Office)">
+                    <input type="number" id="radius" placeholder="Radius in meters" value="500" min="50" max="5000">
+                    <button onclick="saveGeofence()">Save Geofence</button>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Saved Geofences</h2>
+                <div class="geofence-list" id="geofenceList"></div>
+            </div>
+            
+            <div class="card">
+                <h2>Webhook Configuration</h2>
+                <input type="text" id="webhookUrl" placeholder="Make.com webhook URL" value="https://hook.us1.make.com/vrkgwj79n3ak7kwrp07m1x0jnjbpsjtx">
+                <button onclick="saveWebhook()" style="margin-top: 10px;">Update Webhook</button>
+                <div class="status" id="webhookStatus" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simple password protection (for demo purposes)
+        const ADMIN_PASSWORD = 'guggenheim2024';
+        
+        // Initialize map variables
+        let map;
+        let currentMarker;
+        let currentCircle;
+        let geofences = [];
+        
+        // Check if already logged in
+        if (localStorage.getItem('adminAuth') === 'true') {
+            showAdminPanel();
+        }
+        
+        // Login handler
+        document.getElementById('loginForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            
+            if (password === ADMIN_PASSWORD) {
+                localStorage.setItem('adminAuth', 'true');
+                showAdminPanel();
+            } else {
+                document.getElementById('loginError').textContent = 'Invalid password';
+                document.getElementById('password').value = '';
+            }
+        });
+        
+        function showAdminPanel() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('adminPanel').style.display = 'block';
+            initializeMap();
+            loadGeofences();
+            loadWebhook();
+        }
+        
+        function logout() {
+            localStorage.removeItem('adminAuth');
+            location.reload();
+        }
+        
+        function initializeMap() {
+            // Initialize map centered on Guggenheim NYC
+            map = L.map('map').setView([40.7589, -73.9717], 13);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: ' OpenStreetMap contributors'
+            }).addTo(map);
+            
+            // Add click handler
+            map.on('click', function(e) {
+                const lat = e.latlng.lat;
+                const lng = e.latlng.lng;
+                
+                // Remove existing marker and circle
+                if (currentMarker) map.removeLayer(currentMarker);
+                if (currentCircle) map.removeLayer(currentCircle);
+                
+                // Add new marker
+                currentMarker = L.marker([lat, lng]).addTo(map);
+                
+                // Add circle with current radius
+                const radius = document.getElementById('radius').value || 500;
+                currentCircle = L.circle([lat, lng], {
+                    color: '#002855',
+                    fillColor: '#002855',
+                    fillOpacity: 0.2,
+                    radius: parseInt(radius)
+                }).addTo(map);
+                
+                // Update location name with coordinates
+                const name = document.getElementById('locationName');
+                if (!name.value) {
+                    name.value = `Location ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                }
+            });
+            
+            // Update circle when radius changes
+            document.getElementById('radius').addEventListener('input', function() {
+                if (currentCircle) {
+                    currentCircle.setRadius(parseInt(this.value));
+                }
+            });
+            
+            // Load and display existing geofences
+            displayGeofencesOnMap();
+        }
+        
+        function saveGeofence() {
+            if (!currentMarker) {
+                alert('Please click on the map to set a location');
+                return;
+            }
+            
+            const name = document.getElementById('locationName').value;
+            const radius = document.getElementById('radius').value;
+            const latlng = currentMarker.getLatLng();
+            
+            if (!name) {
+                alert('Please enter a location name');
+                return;
+            }
+            
+            const geofence = {
+                id: Date.now(),
+                name: name,
+                lat: latlng.lat,
+                lng: latlng.lng,
+                radius: parseInt(radius)
+            };
+            
+            geofences.push(geofence);
+            localStorage.setItem('geofences', JSON.stringify(geofences));
+            
+            // Clear inputs
+            document.getElementById('locationName').value = '';
+            if (currentMarker) map.removeLayer(currentMarker);
+            if (currentCircle) map.removeLayer(currentCircle);
+            currentMarker = null;
+            currentCircle = null;
+            
+            // Refresh displays
+            loadGeofences();
+            displayGeofencesOnMap();
+            
+            // Show success message
+            showStatus('Geofence saved successfully!');
+        }
+        
+        function loadGeofences() {
+            const saved = localStorage.getItem('geofences');
+            if (saved) {
+                geofences = JSON.parse(saved);
+            }
+            
+            const list = document.getElementById('geofenceList');
+            list.innerHTML = '';
+            
+            if (geofences.length === 0) {
+                list.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">No geofences configured</p>';
+                return;
+            }
+            
+            geofences.forEach(fence => {
+                const item = document.createElement('div');
+                item.className = 'geofence-item';
+                item.innerHTML = `
+                    <div>
+                        <strong>${fence.name}</strong><br>
+                        <small>Lat: ${fence.lat.toFixed(4)}, Lng: ${fence.lng.toFixed(4)} | Radius: ${fence.radius}m</small>
+                    </div>
+                    <button class="delete-btn" onclick="deleteGeofence(${fence.id})">Delete</button>
+                `;
+                list.appendChild(item);
+            });
+        }
+        
+        function displayGeofencesOnMap() {
+            // Display all saved geofences on map
+            geofences.forEach(fence => {
+                L.circle([fence.lat, fence.lng], {
+                    color: '#28a745',
+                    fillColor: '#28a745',
+                    fillOpacity: 0.1,
+                    radius: fence.radius
+                }).addTo(map).bindPopup(fence.name);
+            });
+        }
+        
+        function deleteGeofence(id) {
+            geofences = geofences.filter(g => g.id !== id);
+            localStorage.setItem('geofences', JSON.stringify(geofences));
+            
+            // Refresh map
+            initializeMap();
+            loadGeofences();
+        }
+        
+        function saveWebhook() {
+            const url = document.getElementById('webhookUrl').value;
+            localStorage.setItem('webhookUrl', url);
+            showStatus('Webhook URL updated!', 'webhookStatus');
+        }
+        
+        function loadWebhook() {
+            const saved = localStorage.getItem('webhookUrl');
+            if (saved) {
+                document.getElementById('webhookUrl').value = saved;
+            }
+        }
+        
+        function showStatus(message, elementId = null) {
+            const status = document.createElement('div');
+            status.className = 'status success';
+            status.textContent = message;
+            
+            if (elementId) {
+                const element = document.getElementById(elementId);
+                element.innerHTML = message;
+                element.className = 'status success';
+                element.style.display = 'block';
+                setTimeout(() => {
+                    element.style.display = 'none';
+                }, 3000);
+            }
+        }
+    </script>
+</body>
+</html>
