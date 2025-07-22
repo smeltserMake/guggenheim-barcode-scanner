@@ -160,12 +160,6 @@
                 <div class="geofence-list" id="geofenceList"></div>
             </div>
             
-            <div class="card">
-                <h2>Webhook Configuration</h2>
-                <input type="text" id="webhookUrl" placeholder="Scanner webhook URL" value="https://hook.us1.make.com/vrkgwj79n3ak7kwrp07m1x0jnjbpsjtx">
-                <button onclick="saveWebhook()" style="margin-top: 10px;">Update Webhook</button>
-                <div class="status" id="webhookStatus" style="display: none;"></div>
-            </div>
         </div>
     </div>
 
@@ -180,7 +174,6 @@
         document.addEventListener('DOMContentLoaded', function() {
             initializeMap();
             loadGeofences();
-            loadWebhook();
         });
         
         function initializeMap() {
@@ -476,18 +469,6 @@
             loadGeofences();
         }
         
-        function saveWebhook() {
-            const url = document.getElementById('webhookUrl').value;
-            localStorage.setItem('webhookUrl', url);
-            showStatus('Webhook URL updated!', 'webhookStatus');
-        }
-        
-        function loadWebhook() {
-            const saved = localStorage.getItem('webhookUrl');
-            if (saved) {
-                document.getElementById('webhookUrl').value = saved;
-            }
-        }
         
         function showStatus(message, elementId = null) {
             const status = document.createElement('div');
