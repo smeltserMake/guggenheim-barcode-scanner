@@ -126,6 +126,36 @@
             text-align: center;
         }
         
+        .suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .suggestion {
+            padding: 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+        
+        .suggestion:hover {
+            background-color: #f0f0f0;
+        }
+        
+        .suggestion:last-child {
+            border-bottom: none;
+        }
+
         @media (max-width: 768px) {
             .controls {
                 grid-template-columns: 1fr;
@@ -147,9 +177,13 @@
                 <div id="map"></div>
                 
                 <div class="controls">
+                    <div style="position: relative;">
+                        <input type="text" id="addressSearch" placeholder="Search for address..." autocomplete="off">
+                        <div id="addressSuggestions" class="suggestions"></div>
+                    </div>
                     <input type="text" id="locationName" placeholder="Location name (e.g., NYC Office)">
                     <input type="number" id="radius" placeholder="Radius in meters" value="500" min="50" max="5000">
-                    <input type="password" id="adminPassword" placeholder="Admin password">
+                    <input type="password" id="adminPassword" placeholder="API Key (e.g. 1234)">
                     <button onclick="useCurrentLocation()">Use Current Location</button>
                     <button onclick="saveGeofence()">Save Location</button>
                 </div>
@@ -160,6 +194,8 @@
                 <div class="geofence-list" id="geofenceList"></div>
             </div>
             
+            <div id="webhookStatus" class="status" style="display: none;"></div>
+            
         </div>
     </div>
 
@@ -169,11 +205,13 @@
         let currentMarker;
         let currentCircle;
         let geofences = [];
+        let addressSearchTimeout = null;
         
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             initializeMap();
             loadGeofences();
+            setupAddressSearch();
         });
         
         function initializeMap() {
@@ -221,6 +259,120 @@
             
             // Load and display existing geofences
             displayGeofencesOnMap();
+        }
+
+        async function searchAddress(query) {
+            if (query.length < 3) return [];
+            
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                return data.map(item => ({
+                    displayName: item.display_name,
+                    latitude: parseFloat(item.lat),
+                    longitude: parseFloat(item.lon),
+                    address: item.address
+                }));
+            } catch (error) {
+                console.error('Address search error:', error);
+                return [];
+            }
+        }
+
+        function showAddressSuggestions(suggestions) {
+            const suggestionsDiv = document.getElementById('addressSuggestions');
+            
+            if (suggestions.length === 0) {
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+
+            suggestionsDiv.innerHTML = suggestions.map(suggestion => 
+                `<div class="suggestion" data-lat="${suggestion.latitude}" data-lng="${suggestion.longitude}" data-address="${suggestion.displayName}">
+                    ${suggestion.displayName}
+                </div>`
+            ).join('');
+            
+            suggestionsDiv.style.display = 'block';
+        }
+
+        function selectAddressFromSearch(displayName, latitude, longitude) {
+            // Set the address search value
+            document.getElementById('addressSearch').value = displayName;
+            
+            // Remove existing marker and circle
+            if (currentMarker) map.removeLayer(currentMarker);
+            if (currentCircle) map.removeLayer(currentCircle);
+            
+            // Add marker at selected location
+            currentMarker = L.marker([latitude, longitude]).addTo(map);
+            
+            // Add circle with current radius
+            const radius = document.getElementById('radius').value || 500;
+            currentCircle = L.circle([latitude, longitude], {
+                color: '#002855',
+                fillColor: '#002855',
+                fillOpacity: 0.2,
+                radius: parseInt(radius)
+            }).addTo(map);
+            
+            // Center map on selected location
+            map.setView([latitude, longitude], 16);
+            
+            // Auto-fill location name if empty
+            const nameInput = document.getElementById('locationName');
+            if (!nameInput.value) {
+                // Extract a readable name from the address
+                const parts = displayName.split(',');
+                nameInput.value = parts[0].trim() || `Location at ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+            }
+            
+            // Hide suggestions
+            document.getElementById('addressSuggestions').style.display = 'none';
+        }
+
+        function setupAddressSearch() {
+            const addressInput = document.getElementById('addressSearch');
+            const suggestionsDiv = document.getElementById('addressSuggestions');
+            
+            // Address input event listener
+            addressInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                
+                // Clear previous timeout
+                if (addressSearchTimeout) {
+                    clearTimeout(addressSearchTimeout);
+                }
+                
+                // Hide suggestions if query is too short
+                if (query.length < 3) {
+                    suggestionsDiv.style.display = 'none';
+                    return;
+                }
+                
+                // Debounce the search
+                addressSearchTimeout = setTimeout(async () => {
+                    const suggestions = await searchAddress(query);
+                    showAddressSuggestions(suggestions);
+                }, 300);
+            });
+
+            // Address suggestions click handler
+            suggestionsDiv.addEventListener('click', (e) => {
+                if (e.target.classList.contains('suggestion')) {
+                    const displayName = e.target.dataset.address;
+                    const latitude = parseFloat(e.target.dataset.lat);
+                    const longitude = parseFloat(e.target.dataset.lng);
+                    selectAddressFromSearch(displayName, latitude, longitude);
+                }
+            });
+
+            // Hide suggestions when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('[style*="position: relative"]')) {
+                    suggestionsDiv.style.display = 'none';
+                }
+            });
         }
         
         function useCurrentLocation() {
@@ -306,13 +458,12 @@
             }
             
             if (!password) {
-                alert('Please enter admin password');
+                alert('Please enter API key');
                 return;
             }
             
             const payload = {
                 action: 'save_geofence',
-                password: password,
                 geofence: {
                     name: name,
                     lat: latlng.lat,
@@ -329,6 +480,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'x-make-apikey': password
                     },
                     body: JSON.stringify(payload),
                     mode: 'no-cors' // Handle CORS issues
