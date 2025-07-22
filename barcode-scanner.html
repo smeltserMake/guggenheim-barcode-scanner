@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barcode Scanner with Geofence Validation</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .scan-button {
+            display: block;
+            width: 100%;
+            padding: 15px 30px;
+            font-size: 18px;
+            background-color: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .scan-button:hover {
+            background-color: #0051D5;
+        }
+        .scan-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            display: none;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            font-family: monospace;
+            display: none;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 20px auto;
+            display: none;
+        }
+        video {
+            width: 100%;
+            border-radius: 8px;
+        }
+        .overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 250px;
+            height: 150px;
+            border: 2px solid #00ff00;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Barcode Scanner</h1>
+        
+        <button id="scanButton" class="scan-button">Scan Barcode</button>
+        
+        <div id="videoContainer" class="video-container">
+            <video id="video" autoplay playsinline></video>
+            <div class="overlay"></div>
+        </div>
+        
+        <div id="status" class="status"></div>
+        <div id="result" class="result"></div>
+    </div>
+
+    <script src="https://unpkg.com/@zxing/library@latest"></script>
+    <script>
+        let codeReader = null;
+        let currentLocation = null;
+        let isScanning = false;
+
+        const scanButton = document.getElementById('scanButton');
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        const videoContainer = document.getElementById('videoContainer');
+        const video = document.getElementById('video');
+
+        function showStatus(message, type) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+        }
+
+        function hideStatus() {
+            statusDiv.style.display = 'none';
+        }
+
+        function showResult(data) {
+            resultDiv.textContent = JSON.stringify(data, null, 2);
+            resultDiv.style.display = 'block';
+        }
+
+        async function getLocation() {
+            return new Promise((resolve, reject) => {
+                if (!navigator.geolocation) {
+                    reject(new Error('Geolocation is not supported by your browser'));
+                    return;
+                }
+
+                showStatus('Requesting location access...', 'info');
+
+                navigator.geolocation.getCurrentPosition(
+                    position => {
+                        currentLocation = {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            accuracy: position.coords.accuracy
+                        };
+                        hideStatus();
+                        resolve(currentLocation);
+                    },
+                    error => {
+                        hideStatus();
+                        reject(error);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            });
+        }
+
+        async function sendToWebhook(barcodeValue, location) {
+            const webhookUrl = 'https://hook.us1.make.com/vrkgwj79n3ak7kwrp07m1x0jnjbpsjtx';
+            
+            const payload = {
+                barcode: barcodeValue,
+                location: location,
+                timestamp: new Date().toISOString(),
+                userAgent: navigator.userAgent,
+                device: {
+                    platform: navigator.platform,
+                    vendor: navigator.vendor
+                }
+            };
+
+            try {
+                showStatus('Sending data to server...', 'info');
+                
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    showStatus('Data sent successfully!', 'success');
+                    showResult(payload);
+                } else {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+            } catch (error) {
+                showStatus(`Failed to send data: ${error.message}`, 'error');
+                console.error('Webhook error:', error);
+            }
+        }
+
+        async function startScanning() {
+            if (isScanning) return;
+            
+            isScanning = true;
+            scanButton.textContent = 'Stop Scanning';
+            videoContainer.style.display = 'block';
+            hideStatus();
+            resultDiv.style.display = 'none';
+
+            try {
+                if (!currentLocation) {
+                    try {
+                        await getLocation();
+                    } catch (error) {
+                        showStatus(`Location error: ${error.message}. Continuing without location.`, 'error');
+                        currentLocation = null;
+                    }
+                }
+
+                codeReader = new ZXing.BrowserMultiFormatReader();
+                
+                const videoInputDevices = await codeReader.listVideoInputDevices();
+                
+                if (videoInputDevices.length === 0) {
+                    throw new Error('No camera found on device');
+                }
+
+                // Prefer back camera
+                let selectedDeviceId = videoInputDevices[0].deviceId;
+                
+                // Try to find back camera
+                for (const device of videoInputDevices) {
+                    if (device.label.toLowerCase().includes('back') || 
+                        device.label.toLowerCase().includes('rear') ||
+                        device.label.toLowerCase().includes('environment')) {
+                        selectedDeviceId = device.deviceId;
+                        break;
+                    }
+                }
+
+                // Set constraints for better barcode scanning
+                const constraints = {
+                    deviceId: selectedDeviceId,
+                    focusMode: 'continuous',
+                    advanced: [{
+                        focusMode: 'continuous',
+                        torch: false
+                    }]
+                };
+
+                await codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', async (result, err) => {
+                    if (result) {
+                        stopScanning();
+                        
+                        const barcodeValue = result.text;
+                        showStatus(`Barcode scanned: ${barcodeValue}`, 'success');
+                        
+                        await sendToWebhook(barcodeValue, currentLocation);
+                    }
+                    
+                    if (err && !(err instanceof ZXing.NotFoundException)) {
+                        console.error(err);
+                    }
+                });
+
+            } catch (error) {
+                showStatus(`Scanner error: ${error.message}`, 'error');
+                stopScanning();
+            }
+        }
+
+        function stopScanning() {
+            if (codeReader) {
+                codeReader.reset();
+                codeReader = null;
+            }
+            
+            isScanning = false;
+            scanButton.textContent = 'Scan Barcode';
+            videoContainer.style.display = 'none';
+        }
+
+        scanButton.addEventListener('click', () => {
+            if (isScanning) {
+                stopScanning();
+            } else {
+                startScanning();
+            }
+        });
+
+        // Check for camera permissions on load
+        if (navigator.permissions) {
+            navigator.permissions.query({ name: 'camera' }).then(result => {
+                if (result.state === 'denied') {
+                    showStatus('Camera access denied. Please enable camera permissions.', 'error');
+                    scanButton.disabled = true;
+                }
+            });
+        }
+    </script>
+</body>
+</html>
